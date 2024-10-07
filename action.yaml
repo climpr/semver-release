@@ -1,0 +1,56 @@
+name: Create SemVer Github release
+description: "Creates and updates releases in GitHub using SemVer logic"
+
+inputs:
+  update-type:
+    description: Which release type to release? Allowed values:major, minor or patch
+    required: true
+    default: patch
+  label:
+    description: Semver label. i.e final, alpha, rc
+    required: false
+  pre-release:
+    description: "Is the release a pre-release. Allowed: 'true', 'false'"
+    default: "false"
+
+runs:
+  using: composite
+  steps:
+    - name: Validate inputs
+      shell: pwsh
+      env:
+        updateType: ${{ inputs.update-type }}
+        label: ${{ inputs.label }}
+        preRelease: ${{ inputs.pre-release }}
+      run: |
+        if ($env:updateType -notin @("major", "minor", "patch")) {
+          throw "'update-type' parameter is not valid. Input value: $($env:updateType). Allowed values: 'major', 'minor', 'patch'."
+        }
+
+        $labelRegex = "((?:-((?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\.(?:0|[1-9]\d*|\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\+([0-9a-zA-Z-]+(?:\.[0-9a-zA-Z-]+)*))?)$"
+        if ($env:label -notmatch $labelRegex) {
+          throw "'label' parameter is not valid. Input value: $($env:label). Does not match semver label format. See: https://semver.org/."
+        }
+
+        if ($env:preRelease -notin @("true", "false")) {
+          throw "'pre-release' parameter is not valid. Input value: $($env:preRelease). Allowed values: 'true', 'false'."
+        }
+
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set version
+      shell: pwsh
+      env:
+        GH_TOKEN: ${{ github.token }}
+        actionPath: ${{ github.action_path }}
+        updateType: ${{ inputs.update-type }}
+        label: ${{ inputs.label }}
+        preRelease: ${{ inputs.pre-release }}
+      run: |
+        $repoName = gh repo view --json name -q ".name"
+
+        git config --global user.name "$repoName[bot]"  
+        git config --global user.email "$repoName[bot]@users.noreply.github.com"
+
+        & "$($env:actionPath)/src/New-Releases.ps1" -UpdateType $env:updateType -Label $env:label -PreRelease ([System.Convert]::ToBoolean($env:preRelease))
